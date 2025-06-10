@@ -1,0 +1,147 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
+ENTITY Sistema_Ascensor_Top is
+    Port (   
+        -- Señales del sistema
+        clk           : in  STD_LOGIC;
+        reset         : in  STD_LOGIC;
+        
+        -- Botones de llamada del ascensor
+        btn_piso1     : in  STD_LOGIC;
+        btn_piso2_up  : in  STD_LOGIC;
+        btn_piso2_dn  : in  STD_LOGIC;
+        btn_piso3_up  : in  STD_LOGIC;
+        btn_piso3_dn  : in  STD_LOGIC;
+        btn_piso4_up  : in  STD_LOGIC;
+        btn_piso4_dn  : in  STD_LOGIC;
+        btn_piso5     : in  STD_LOGIC;
+        
+        -- Control del motor y servos
+        motor_in1     : out STD_LOGIC;
+        motor_in2     : out STD_LOGIC;
+        motor_ena     : out STD_LOGIC;
+        servo1_pwm    : out STD_LOGIC;
+        servo2_pwm    : out STD_LOGIC;
+        
+        -- LEDs indicadores de piso
+        led_piso1     : out STD_LOGIC;
+        led_piso2     : out STD_LOGIC;
+        led_piso3     : out STD_LOGIC;
+        led_piso4     : out STD_LOGIC;
+        led_piso5     : out STD_LOGIC;
+        
+        -- Estados del sistema
+        door_open     : out STD_LOGIC;
+        moving        : out STD_LOGIC;
+        
+        -- Estadísticas del sistema
+        total_trips   : out STD_LOGIC_VECTOR(7 downto 0);
+        most_used_floor : out STD_LOGIC_VECTOR(2 downto 0);
+        
+        -- Display de 7 segmentos para mostrar piso actual
+        display_7seg  : out STD_LOGIC_VECTOR(6 downto 0)
+    );
+end Sistema_Ascensor_Top;
+
+ARCHITECTURE Structural of Sistema_Ascensor_Top is
+
+    -- Declaración del componente DosServos
+    component DosServos
+        Port (   
+            clk           : in  STD_LOGIC;
+            reset         : in  STD_LOGIC;
+            btn_piso1     : in  STD_LOGIC;
+            btn_piso2_up  : in  STD_LOGIC;
+            btn_piso2_dn  : in  STD_LOGIC;
+            btn_piso3_up  : in  STD_LOGIC;
+            btn_piso3_dn  : in  STD_LOGIC;
+            btn_piso4_up  : in  STD_LOGIC;
+            btn_piso4_dn  : in  STD_LOGIC;
+            btn_piso5     : in  STD_LOGIC;
+            motor_in1     : out STD_LOGIC;
+            motor_in2     : out STD_LOGIC;
+            motor_ena     : out STD_LOGIC;
+            servo1_pwm    : out STD_LOGIC;
+            servo2_pwm    : out STD_LOGIC;
+            led_piso1     : out STD_LOGIC;
+            led_piso2     : out STD_LOGIC;
+            led_piso3     : out STD_LOGIC;
+            led_piso4     : out STD_LOGIC;
+            led_piso5     : out STD_LOGIC;
+            door_open     : out STD_LOGIC;
+            moving        : out STD_LOGIC;
+            total_trips   : out STD_LOGIC_VECTOR(7 downto 0);
+            most_used_floor : out STD_LOGIC_VECTOR(2 downto 0)
+        );
+    end component;
+
+    -- Declaración del componente Display7Segmentos
+    component Display7Segmentos
+        Port (   
+            led_piso1     : in  STD_LOGIC;
+            led_piso2     : in  STD_LOGIC;
+            led_piso3     : in  STD_LOGIC;
+            led_piso4     : in  STD_LOGIC;
+            led_piso5     : in  STD_LOGIC;
+            display_7seg  : out STD_LOGIC_VECTOR(6 downto 0)
+        );
+    end component;
+
+    -- Señales internas para conectar los módulos
+    signal internal_led_piso1 : STD_LOGIC;
+    signal internal_led_piso2 : STD_LOGIC;
+    signal internal_led_piso3 : STD_LOGIC;
+    signal internal_led_piso4 : STD_LOGIC;
+    signal internal_led_piso5 : STD_LOGIC;
+
+begin
+
+    -- Instanciación del módulo del ascensor
+    Ascensor_inst: DosServos
+        port map (
+            clk         => clk,
+            reset       => reset,
+            btn_piso1   => btn_piso1,
+            btn_piso2_up => btn_piso2_up,
+            btn_piso2_dn => btn_piso2_dn,
+            btn_piso3_up => btn_piso3_up,
+            btn_piso3_dn => btn_piso3_dn,
+            btn_piso4_up => btn_piso4_up,
+            btn_piso4_dn => btn_piso4_dn,
+            btn_piso5   => btn_piso5,
+            motor_in1   => motor_in1,
+            motor_in2   => motor_in2,
+            motor_ena   => motor_ena,
+            servo1_pwm  => servo1_pwm,
+            servo2_pwm  => servo2_pwm,
+            led_piso1   => internal_led_piso1,
+            led_piso2   => internal_led_piso2,
+            led_piso3   => internal_led_piso3,
+            led_piso4   => internal_led_piso4,
+            led_piso5   => internal_led_piso5,
+            door_open   => door_open,
+            moving      => moving,
+            total_trips => total_trips,
+            most_used_floor => most_used_floor
+        );
+
+    -- Instanciación del módulo del display
+    Display_inst: Display7Segmentos
+        port map (
+            led_piso1   => internal_led_piso1,
+            led_piso2   => internal_led_piso2,
+            led_piso3   => internal_led_piso3,
+            led_piso4   => internal_led_piso4,
+            led_piso5   => internal_led_piso5,
+            display_7seg => display_7seg
+        );
+
+    -- Conexiones directas hacia las salidas externas
+    led_piso1 <= internal_led_piso1;
+    led_piso2 <= internal_led_piso2;
+    led_piso3 <= internal_led_piso3;
+    led_piso4 <= internal_led_piso4;
+    led_piso5 <= internal_led_piso5;
+
+end Structural;

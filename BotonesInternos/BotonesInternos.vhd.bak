@@ -1,0 +1,126 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
+-- Módulo para los botones internos del ascensor
+-- Estos son los botones que presionan los pasajeros desde adentro
+ENTITY BotonesInternos is
+    Port (   
+        -- Señales del sistema
+        clk           : in  STD_LOGIC;
+        reset         : in  STD_LOGIC;
+        
+        -- Botones físicos internos del ascensor
+        btn_interno_1 : in  STD_LOGIC;  -- Botón para ir al piso 1
+        btn_interno_2 : in  STD_LOGIC;  -- Botón para ir al piso 2
+        btn_interno_3 : in  STD_LOGIC;  -- Botón para ir al piso 3
+        btn_interno_4 : in  STD_LOGIC;  -- Botón para ir al piso 4
+        btn_interno_5 : in  STD_LOGIC;  -- Botón para ir al piso 5
+        
+        -- Señales de control
+        door_open     : in  STD_LOGIC;  -- Estado de las puertas
+        current_floor : in  STD_LOGIC_VECTOR(2 downto 0);  -- Piso actual (1-5)
+        
+        -- Salidas - solicitudes de pisos
+        solicitud_piso1 : out STD_LOGIC;
+        solicitud_piso2 : out STD_LOGIC;
+        solicitud_piso3 : out STD_LOGIC;
+        solicitud_piso4 : out STD_LOGIC;
+        solicitud_piso5 : out STD_LOGIC;
+        
+        -- LEDs indicadores de solicitudes activas
+        led_solicitud_1 : out STD_LOGIC;
+        led_solicitud_2 : out STD_LOGIC;
+        led_solicitud_3 : out STD_LOGIC;
+        led_solicitud_4 : out STD_LOGIC;
+        led_solicitud_5 : out STD_LOGIC
+    );
+end BotonesInternos;
+
+ARCHITECTURE Behavioral of BotoneInternos is
+
+    -- Registro de solicitudes de pisos
+    signal solicitudes_activas : STD_LOGIC_VECTOR(5 downto 1) := "00000";
+    
+    -- Anti-rebote para los botones
+    type sync_array is array (1 to 5) of STD_LOGIC_VECTOR(2 downto 0);
+    signal btn_sync : sync_array := (others => "000");
+    signal btn_pressed : STD_LOGIC_VECTOR(5 downto 1) := "00000";
+    
+    -- Conversión del piso actual
+    signal piso_actual : integer range 1 to 5 := 1;
+
+begin
+
+    -- Conversión del vector de piso actual a entero
+    process(current_floor)
+    begin
+        case current_floor is
+            when "001" => piso_actual <= 1;
+            when "010" => piso_actual <= 2;
+            when "011" => piso_actual <= 3;
+            when "100" => piso_actual <= 4;
+            when "101" => piso_actual <= 5;
+            when others => piso_actual <= 1;
+        end case;
+    end process;
+
+    -- Proceso de anti-rebote para los botones
+    anti_rebote: process(clk, reset)
+    begin
+        if reset = '1' then
+            btn_sync <= (others => "000");
+            btn_pressed <= "00000";
+        elsif rising_edge(clk) then
+            -- Sincronización y detección de flancos
+            btn_sync(1) <= btn_sync(1)(1 downto 0) & btn_interno_1;
+            btn_sync(2) <= btn_sync(2)(1 downto 0) & btn_interno_2;
+            btn_sync(3) <= btn_sync(3)(1 downto 0) & btn_interno_3;
+            btn_sync(4) <= btn_sync(4)(1 downto 0) & btn_interno_4;
+            btn_sync(5) <= btn_sync(5)(1 downto 0) & btn_interno_5;
+            
+            -- Detección de flancos de subida (botón presionado)
+            for i in 1 to 5 loop
+                btn_pressed(i) <= btn_sync(i)(1) and not btn_sync(i)(2);
+            end loop;
+        end if;
+    end process;
+
+    -- Proceso principal de manejo de solicitudes
+    manejo_solicitudes: process(clk, reset)
+    begin
+        if reset = '1' then
+            solicitudes_activas <= "00000";
+        elsif rising_edge(clk) then
+            
+            -- Registrar nuevas solicitudes cuando se presionan los botones
+            -- Solo se puede solicitar un piso diferente al actual
+            for i in 1 to 5 loop
+                if btn_pressed(i) = '1' and i /= piso_actual then
+                    solicitudes_activas(i) <= '1';
+                end if;
+            end loop;
+            
+            -- Limpiar solicitud cuando llegamos al piso solicitado
+            -- y las puertas se abren
+            if door_open = '1' then
+                solicitudes_activas(piso_actual) <= '0';
+            end if;
+            
+        end if;
+    end process;
+
+    -- Asignación de salidas
+    solicitud_piso1 <= solicitudes_activas(1);
+    solicitud_piso2 <= solicitudes_activas(2);
+    solicitud_piso3 <= solicitudes_activas(3);
+    solicitud_piso4 <= solicitudes_activas(4);
+    solicitud_piso5 <= solicitudes_activas(5);
+    
+    -- LEDs indicadores (se encienden cuando hay solicitud activa)
+    led_solicitud_1 <= solicitudes_activas(1);
+    led_solicitud_2 <= solicitudes_activas(2);
+    led_solicitud_3 <= solicitudes_activas(3);
+    led_solicitud_4 <= solicitudes_activas(4);
+    led_solicitud_5 <= solicitudes_activas(5);
+
+end Behavioral;

@@ -1,0 +1,9 @@
+
+State Machine - |Ascensor_top|main_state
+Name main_state.DOOR_CLOSING main_state.DOOR_OPEN_WAIT main_state.DOOR_OPENING main_state.MOVING_DOWN main_state.MOVING_UP main_state.IDLE 
+main_state.IDLE 0 0 0 0 0 0 
+main_state.MOVING_UP 0 0 0 0 1 1 
+main_state.MOVING_DOWN 0 0 0 1 0 1 
+main_state.DOOR_OPENING 0 0 1 0 0 1 
+main_state.DOOR_OPEN_WAIT 0 1 0 0 0 1 
+main_state.DOOR_CLOSING 1 0 0 0 0 1 

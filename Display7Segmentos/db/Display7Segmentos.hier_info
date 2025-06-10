@@ -1,0 +1,23 @@
+|Display7Segmentos
+led_piso1 => piso_actual[2].OUTPUTSELECT
+led_piso1 => piso_actual[1].OUTPUTSELECT
+led_piso1 => piso_actual[0].OUTPUTSELECT
+led_piso2 => piso_actual.OUTPUTSELECT
+led_piso2 => piso_actual.OUTPUTSELECT
+led_piso2 => piso_actual.OUTPUTSELECT
+led_piso3 => piso_actual.OUTPUTSELECT
+led_piso3 => piso_actual.OUTPUTSELECT
+led_piso3 => piso_actual.DATAA
+led_piso4 => piso_actual.OUTPUTSELECT
+led_piso4 => piso_actual.OUTPUTSELECT
+led_piso5 => piso_actual.DATAA
+led_piso5 => piso_actual.DATAA
+display_7seg[0] <= Mux6.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[1] <= Mux5.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[2] <= Mux4.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[3] <= Mux3.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[4] <= Mux2.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[5] <= Mux1.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg[6] <= Mux0.DB_MAX_OUTPUT_PORT_TYPE
+
+

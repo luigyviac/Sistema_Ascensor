@@ -1,0 +1,365 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+
+ENTITY Ascensor_top is
+    generic( 
+        CLK_FREQ: natural := 50000000;
+        PWM_PERIOD: natural := 1000000;
+        DOOR_TIME: natural := 50000000;
+        FLOOR_TIME: natural := 150000000;
+        DOOR_DELAY: natural := 100000000--tiempo que se demora las puertas
+    );
+    Port (   
+        clk           : in  STD_LOGIC;
+        reset         : in  STD_LOGIC;
+        
+        -- Botones de llamada
+        btn_piso1     : in  STD_LOGIC;
+        btn_piso2_up  : in  STD_LOGIC;
+        btn_piso2_dn  : in  STD_LOGIC;
+        btn_piso3_up  : in  STD_LOGIC;
+        btn_piso3_dn  : in  STD_LOGIC;
+        btn_piso4_up  : in  STD_LOGIC;
+        btn_piso4_dn  : in  STD_LOGIC;
+        btn_piso5     : in  STD_LOGIC;
+        
+        -- Control motor y servos
+        motor_in1     : out STD_LOGIC;
+        motor_in2     : out STD_LOGIC;
+        motor_ena     : out STD_LOGIC;
+        servo1_pwm    : out STD_LOGIC;
+        servo2_pwm    : out STD_LOGIC;
+        
+        -- Indicadores
+        led_piso1     : out STD_LOGIC;
+        led_piso2     : out STD_LOGIC;
+        led_piso3     : out STD_LOGIC;
+        led_piso4     : out STD_LOGIC;
+        led_piso5     : out STD_LOGIC;
+        
+        -- Estados y estadísticas
+        door_open     : out STD_LOGIC;
+        moving        : out STD_LOGIC
+    );
+end Ascensor_top;
+
+ARCHITECTURE Arch_MemAscensor of Ascensor_top is
+    -- Constantes para servos
+    constant PWM_STOP:     integer := 75000;
+    constant PWM_FORWARD:  integer := 100000;
+    constant PWM_BACKWARD: integer := 50000;
+    
+    -- Estados del sistema
+    type main_state_type is (IDLE, MOVING_UP, MOVING_DOWN, DOOR_OPENING, DOOR_OPEN_WAIT, DOOR_CLOSING);
+    signal main_state: main_state_type := IDLE;
+    
+    -- Sistema de memoria
+    type memory_array is array(0 to 31) of STD_LOGIC_VECTOR(7 downto 0);
+    signal system_memory: memory_array := (others => "00000000");
+    
+    -- Direcciones de memoria
+    constant ADDR_CONFIG_BASE:    integer := 0;   -- Configuraciones (0-7)
+    constant ADDR_STATS_BASE:     integer := 8;   -- Estadísticas (8-15)
+    constant ADDR_CALL_QUEUE:     integer := 16;  -- Cola de llamadas (16-20)
+    constant ADDR_FLOOR_COUNTERS: integer := 21;  -- Contadores por piso (21-25)
+    constant ADDR_LAST_STATE:     integer := 26;  -- Último estado guardado
+    constant ADDR_PRIORITY_MAP:   integer := 27;  -- Mapa de prioridades
+    
+    -- Señales del ascensor
+    signal current_floor: integer range 1 to 5 := 1;
+    signal target_floor: integer range 1 to 5 := 1;
+    signal floor_calls: STD_LOGIC_VECTOR(5 downto 1) := "00000";
+    
+    -- Contadores y temporizadores
+    signal timer_counter: integer range 0 to FLOOR_TIME-1 := 0;
+    signal door_counter: integer range 0 to DOOR_TIME-1 := 0;
+    signal wait_counter: integer range 0 to DOOR_DELAY-1 := 0;
+    
+    -- PWM para servos
+    signal pwm_counter: integer range 0 to PWM_PERIOD-1 := 0;
+    signal servo_pwm_width: integer range 0 to PWM_PERIOD-1 := PWM_STOP;
+    signal door_state: STD_LOGIC := '0';
+    
+    -- Sistema de estadísticas
+    signal trip_counter: STD_LOGIC_VECTOR(7 downto 0) := "00000000";
+    
+    -- Tipo para array de contadores de piso
+    type floor_counter_array is array(1 to 5) of STD_LOGIC_VECTOR(7 downto 0);
+    signal floor_usage_counters: floor_counter_array := (others => "00000000");
+    
+    signal most_popular_floor: integer range 1 to 5 := 1;
+    
+    -- Anti-rebote (simplificado para este ejemplo)
+    type button_sync_array is array (1 to 8) of STD_LOGIC_VECTOR(1 downto 0);
+    signal btn_sync: button_sync_array := (others => "00");
+    signal btn_edges: STD_LOGIC_VECTOR(8 downto 1) := "00000000";
+    
+    -- Control de memoria
+    signal mem_write_en: STD_LOGIC := '0';
+    signal mem_addr: integer range 0 to 31 := 0;
+    signal mem_data_in: STD_LOGIC_VECTOR(7 downto 0) := "00000001";
+    signal mem_data_out: STD_LOGIC_VECTOR(7 downto 0);
+    
+begin
+    
+    -- Proceso de memoria
+    memory_process: process(clk, reset)
+    begin
+        if reset = '1' then
+            -- Inicializar memoria con valores por defecto
+            system_memory <= (others => "00000000");
+            -- Configuraciones iniciales
+            system_memory(ADDR_CONFIG_BASE) <= "00000001";     -- Piso inicial = 1
+            system_memory(ADDR_CONFIG_BASE+1) <= "00000011";   -- Tiempo puerta = 3
+            system_memory(ADDR_CONFIG_BASE+2) <= "00000101";   -- Tiempo movimiento = 5
+        elsif rising_edge(clk) then
+            -- Escritura en memoria
+            if mem_write_en = '1' then
+                system_memory(mem_addr) <= mem_data_in;
+            end if;
+            -- Lectura de memoria
+            mem_data_out <= system_memory(mem_addr);
+        end if;
+    end process;
+    
+    -- Anti-rebote simplificado
+    button_process: process(clk, reset)
+        variable btn_inputs: STD_LOGIC_VECTOR(8 downto 1);
+    begin
+        if reset = '1' then
+            btn_sync <= (others => "00");
+            btn_edges <= "00000000";
+        elsif rising_edge(clk) then
+            btn_inputs := btn_piso1 & btn_piso2_up & btn_piso2_dn & btn_piso3_up & 
+                         btn_piso3_dn & btn_piso4_up & btn_piso4_dn & btn_piso5;
+            
+            for i in 1 to 8 loop
+                btn_sync(i) <= btn_sync(i)(0) & btn_inputs(i);
+                btn_edges(i) <= btn_sync(i)(0) and not btn_sync(i)(1);
+            end loop;
+        end if;
+    end process;
+    
+    -- Control principal del ascensor con memoria
+    elevator_control: process(clk, reset)
+        variable next_target: integer range 1 to 5;
+        variable priority_score: integer range 0 to 255;
+        variable best_score: integer range 0 to 255;
+    begin
+        if reset = '1' then
+            main_state <= IDLE;
+            current_floor <= conv_integer(system_memory(ADDR_CONFIG_BASE));
+            target_floor <= 1;
+            floor_calls <= "00000";
+            timer_counter <= 0;
+            door_counter <= 0;
+            wait_counter <= 0;
+            servo_pwm_width <= PWM_STOP;
+            door_state <= '0';
+            trip_counter <= "00000000";
+            floor_usage_counters <= (others => "00000000");
+            
+        elsif rising_edge(clk) then
+            
+            -- Registrar llamadas con estadísticas
+            if btn_edges(1) = '1' then 
+                floor_calls(1) <= '1';
+                floor_usage_counters(1) <= floor_usage_counters(1) + 1;
+            end if;
+            if btn_edges(2) = '1' or btn_edges(3) = '1' then 
+                floor_calls(2) <= '1';
+                floor_usage_counters(2) <= floor_usage_counters(2) + 1;
+            end if;
+            if btn_edges(4) = '1' or btn_edges(5) = '1' then 
+                floor_calls(3) <= '1';
+                floor_usage_counters(3) <= floor_usage_counters(3) + 1;
+            end if;
+            if btn_edges(6) = '1' or btn_edges(7) = '1' then 
+                floor_calls(4) <= '1';
+                floor_usage_counters(4) <= floor_usage_counters(4) + 1;
+            end if;
+            if btn_edges(8) = '1' then 
+                floor_calls(5) <= '1';
+                floor_usage_counters(5) <= floor_usage_counters(5) + 1;
+            end if;
+            
+            case main_state is
+                when IDLE =>
+                    servo_pwm_width <= PWM_STOP;
+                    
+                    -- Guardar estado actual en memoria
+                    mem_addr <= ADDR_LAST_STATE;
+                    mem_data_in <= conv_std_logic_vector(current_floor, 8);
+                    mem_write_en <= '1';
+                    
+                    if floor_calls /= "00000" then
+                        if floor_calls(current_floor) = '1' then
+                            floor_calls(current_floor) <= '0';
+                            main_state <= DOOR_OPENING;
+                            door_counter <= 0;
+                        else
+                            -- Sistema inteligente de selección basado en memoria
+                            next_target := current_floor;
+                            best_score := 0;
+                            
+                            -- Evaluar cada piso con llamada activa
+                            for i in 1 to 5 loop
+                                if floor_calls(i) = '1' then
+                                    -- Calcular puntuación basada en:
+                                    -- - Distancia (menor es mejor)
+                                    -- - Frecuencia de uso (mayor es mejor)
+                                    priority_score := 100 - abs(i - current_floor) * 10 + 
+                                                    conv_integer(floor_usage_counters(i));
+                                    
+                                    if priority_score > best_score then
+                                        best_score := priority_score;
+                                        next_target := i;
+                                    end if;
+                                end if;
+                            end loop;
+                            
+                            target_floor <= next_target;
+                            
+                            if next_target > current_floor then
+                                main_state <= MOVING_UP;
+                                timer_counter <= 0;
+                            elsif next_target < current_floor then
+                                main_state <= MOVING_DOWN;
+                                timer_counter <= 0;
+                            end if;
+                        end if;
+                    else
+                        mem_write_en <= '0';
+                    end if;
+                
+                when MOVING_UP =>
+                    mem_write_en <= '0';
+                    if timer_counter >= FLOOR_TIME-1 then
+                        current_floor <= current_floor + 1;
+                        timer_counter <= 0;
+                        trip_counter <= trip_counter + 1;
+                        
+                        if (current_floor + 1) = target_floor then
+                            floor_calls(current_floor + 1) <= '0';
+                            main_state <= DOOR_OPENING;
+                            door_counter <= 0;
+                        elsif (current_floor + 1) >= 5 then
+                            main_state <= IDLE;
+                        end if;
+                    else
+                        timer_counter <= timer_counter + 1;
+                    end if;
+                
+                when MOVING_DOWN =>
+                    mem_write_en <= '0';
+                    if timer_counter >= FLOOR_TIME-1 then
+                        current_floor <= current_floor - 1;
+                        timer_counter <= 0;
+                        trip_counter <= trip_counter + 1;
+                        
+                        if (current_floor - 1) = target_floor then
+                            floor_calls(current_floor - 1) <= '0';
+                            main_state <= DOOR_OPENING;
+                            door_counter <= 0;
+                        elsif (current_floor - 1) <= 1 then
+                            main_state <= IDLE;
+                        end if;
+                    else
+                        timer_counter <= timer_counter + 1;
+                    end if;
+                
+                when DOOR_OPENING =>
+                    mem_write_en <= '0';
+                    servo_pwm_width <= PWM_FORWARD;
+                    if door_counter >= DOOR_TIME-1 then
+                        door_state <= '1';
+                        main_state <= DOOR_OPEN_WAIT;
+                        wait_counter <= 0;
+                    else
+                        door_counter <= door_counter + 1;
+                    end if;
+                    
+                when DOOR_OPEN_WAIT =>
+                    mem_write_en <= '0';
+                    servo_pwm_width <= PWM_STOP;
+                    if wait_counter >= DOOR_DELAY-1 then
+                        main_state <= DOOR_CLOSING;
+                        door_counter <= 0;
+                    else
+                        wait_counter <= wait_counter + 1;
+                    end if;
+                
+                when DOOR_CLOSING =>
+                    mem_write_en <= '0';
+                    servo_pwm_width <= PWM_BACKWARD;
+                    if door_counter >= DOOR_TIME-1 then
+                        door_state <= '0';
+                        main_state <= IDLE;
+                        door_counter <= 0;
+                    else
+                        door_counter <= door_counter + 1;
+                    end if;
+            end case;
+            
+            -- Actualizar piso más popular
+            most_popular_floor <= 1; -- Valor por defecto
+            for i in 2 to 5 loop
+                if floor_usage_counters(i) > floor_usage_counters(most_popular_floor) then
+                    most_popular_floor <= i;
+                end if;
+            end loop;
+            
+        end if;
+    end process;
+    
+    -- Generador PWM
+    pwm_generation: process(clk, reset)
+    begin
+        if reset = '1' then
+            pwm_counter <= 0;
+        elsif rising_edge(clk) then
+            if pwm_counter >= PWM_PERIOD-1 then
+                pwm_counter <= 0;
+            else
+                pwm_counter <= pwm_counter + 1;
+            end if;
+        end if;
+    end process;
+    
+    -- Control del motor
+    motor_control: process(main_state)
+    begin
+        case main_state is
+            when MOVING_UP =>
+                motor_in1 <= '1';
+                motor_in2 <= '0';
+                motor_ena <= '1';
+            when MOVING_DOWN =>
+                motor_in1 <= '0';
+                motor_in2 <= '1';
+                motor_ena <= '1';
+            when others =>
+                motor_in1 <= '0';
+                motor_in2 <= '0';
+                motor_ena <= '0';
+        end case;
+    end process;
+    
+    -- Asignaciones de salida
+    servo1_pwm <= '1' when pwm_counter < servo_pwm_width else '0';
+    servo2_pwm <= '1' when pwm_counter < servo_pwm_width else '0';
+    
+    led_piso1 <= '1' when current_floor = 1 else '0';
+    led_piso2 <= '1' when current_floor = 2 else '0';
+    led_piso3 <= '1' when current_floor = 3 else '0';
+    led_piso4 <= '1' when current_floor = 4 else '0';
+    led_piso5 <= '1' when current_floor = 5 else '0';
+    
+    door_open <= door_state;
+    moving <= '1' when (main_state = MOVING_UP or main_state = MOVING_DOWN) else '0';
+    
+    -- Salidas de estadísticas
+    
+end Arch_MemAscensor;

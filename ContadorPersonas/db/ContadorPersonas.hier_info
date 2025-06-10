@@ -1,0 +1,40 @@
+|ContadorPersonas
+clk => contador[0].CLK
+clk => contador[1].CLK
+clk => contador[2].CLK
+clk => contador[3].CLK
+clk => btn_restar_sync[0].CLK
+clk => btn_restar_sync[1].CLK
+clk => btn_restar_sync[2].CLK
+clk => btn_sumar_sync[0].CLK
+clk => btn_sumar_sync[1].CLK
+clk => btn_sumar_sync[2].CLK
+reset => contador[0].ACLR
+reset => contador[1].ACLR
+reset => contador[2].ACLR
+reset => contador[3].ACLR
+reset => btn_restar_sync[0].ACLR
+reset => btn_restar_sync[1].ACLR
+reset => btn_restar_sync[2].ACLR
+reset => btn_sumar_sync[0].ACLR
+reset => btn_sumar_sync[1].ACLR
+reset => btn_sumar_sync[2].ACLR
+btn_sumar => btn_sumar_sync[0].DATAIN
+btn_restar => btn_restar_sync[0].DATAIN
+display_7seg_unidades[0] <= Mux6.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[1] <= Mux5.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[2] <= Mux4.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[3] <= Mux3.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[4] <= Mux2.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[5] <= Mux1.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_unidades[6] <= Mux0.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_decenas[0] <= <VCC>
+display_7seg_decenas[1] <= LessThan1.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_decenas[2] <= LessThan1.DB_MAX_OUTPUT_PORT_TYPE
+display_7seg_decenas[3] <= <VCC>
+display_7seg_decenas[4] <= <VCC>
+display_7seg_decenas[5] <= <VCC>
+display_7seg_decenas[6] <= <VCC>
+led_limite <= Equal0.DB_MAX_OUTPUT_PORT_TYPE
+
+

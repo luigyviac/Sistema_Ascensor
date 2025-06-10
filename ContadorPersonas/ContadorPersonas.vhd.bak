@@ -1,0 +1,106 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+
+ENTITY ContadorPersonas is
+    Port (   
+        clk           : in  STD_LOGIC;
+        reset         : in  STD_LOGIC;
+        
+        -- Botones de control
+        btn_sumar     : in  STD_LOGIC;  
+        btn_restar    : in  STD_LOGIC;  
+        
+        -- Salidas
+        display_7seg  : out STD_LOGIC_VECTOR(6 downto 0);  -- Display 7 segmentos
+        led_limite    : out STD_LOGIC                        -- LED indicador de límite
+    );
+end ContadorPersonas;
+
+ARCHITECTURE Behavioral of ContadorPersonas is
+
+    -- Señal del contador (0 a 10)
+    signal contador : integer range 0 to 10 := 0;
+    
+    -- Señales para anti-rebote
+    signal btn_sumar_sync  : STD_LOGIC_VECTOR(2 downto 0) := "000";
+    signal btn_restar_sync : STD_LOGIC_VECTOR(2 downto 0) := "000";
+    signal btn_sumar_edge  : STD_LOGIC;
+    signal btn_restar_edge : STD_LOGIC;
+    
+    -- Patrones para display de 7 segmentos (cátodo común)
+    -- Formato: gfedcba (MSB a LSB)
+    -- '0' = segmento encendido, '1' = segmento apagado
+    constant DIGIT_0 : STD_LOGIC_VECTOR(6 downto 0) := "1000000"; -- 0
+    constant DIGIT_1 : STD_LOGIC_VECTOR(6 downto 0) := "1111001"; -- 1
+    constant DIGIT_2 : STD_LOGIC_VECTOR(6 downto 0) := "0100100"; -- 2
+    constant DIGIT_3 : STD_LOGIC_VECTOR(6 downto 0) := "0110000"; -- 3
+    constant DIGIT_4 : STD_LOGIC_VECTOR(6 downto 0) := "0011001"; -- 4
+    constant DIGIT_5 : STD_LOGIC_VECTOR(6 downto 0) := "0010010"; -- 5
+    constant DIGIT_6 : STD_LOGIC_VECTOR(6 downto 0) := "0000010"; -- 6
+    constant DIGIT_7 : STD_LOGIC_VECTOR(6 downto 0) := "1111000"; -- 7
+    constant DIGIT_8 : STD_LOGIC_VECTOR(6 downto 0) := "0000000"; -- 8
+    constant DIGIT_9 : STD_LOGIC_VECTOR(6 downto 0) := "0010000"; -- 9
+    constant DIGIT_A : STD_LOGIC_VECTOR(6 downto 0) := "0001000"; -- A (para mostrar 10)
+
+begin
+
+    -- Proceso de anti-rebote para los botones
+    debounce_process: process(clk, reset)
+    begin
+        if reset = '1' then
+            btn_sumar_sync  <= "000";
+            btn_restar_sync <= "000";
+        elsif rising_edge(clk) then
+            -- Registro de desplazamiento para sincronizar botones
+            btn_sumar_sync  <= btn_sumar_sync(1 downto 0) & btn_sumar;
+            btn_restar_sync <= btn_restar_sync(1 downto 0) & btn_restar;
+        end if;
+    end process;
+    
+    -- Detección de flancos ascendentes
+    btn_sumar_edge  <= btn_sumar_sync(1) and not btn_sumar_sync(2);
+    btn_restar_edge <= btn_restar_sync(1) and not btn_restar_sync(2);
+
+    -- Proceso principal del contador
+    contador_process: process(clk, reset)
+    begin
+        if reset = '1' then
+            contador <= 0;
+        elsif rising_edge(clk) then
+            -- Incrementar contador
+            if btn_sumar_edge = '1' then
+                if contador < 10 then
+                    contador <= contador + 1;
+                end if;
+            end if;
+            
+            -- Decrementar contador
+            if btn_restar_edge = '1' then
+                if contador > 0 then
+                    contador <= contador - 1;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    -- Decodificador de 7 segmentos usando with select
+    with contador select
+        display_7seg <= DIGIT_0 when 0,
+                       DIGIT_1 when 1,
+                       DIGIT_2 when 2,
+                       DIGIT_3 when 3,
+                       DIGIT_4 when 4,
+                       DIGIT_5 when 5,
+                       DIGIT_6 when 6,
+                       DIGIT_7 when 7,
+                       DIGIT_8 when 8,
+                       DIGIT_9 when 9,
+                       DIGIT_A when 10,  -- Muestra "A" para el número 10
+                       DIGIT_0 when others;
+
+    -- LED indicador de límites (se enciende cuando está en 0 o 10)
+    led_limite <= '1' when (contador = 0 or contador = 10) else '0';
+
+end Behavioral;
